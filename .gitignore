@@ -1,0 +1,11 @@
+# Caches
+.DS_Store
+__pycache__
+*.pyc
+
+# IDE specific
+.vscode
+
+# Plots
+graph.png
+
