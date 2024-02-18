@@ -2,9 +2,10 @@
 # expensive or needs to be carried out sequentially for some other reason.
 
 
+import asyncio
 from typing import Optional, Iterable
 
-from petri_net import SyncPetriNet, Token, Place, Transition, ArcIn, ArcOut, PetriNet
+from petri_net import AsyncPetriNet, Token, Place, Transition, ArcIn, ArcOut, PetriNet
 from helpers.print_net import PrintPetriNet
 from helpers.graph_net import GraphNet
 
@@ -46,28 +47,40 @@ def place_without_token(place: Place, token: Token) -> Place:
     return Place(place.id, place.name, tuple(t for t in place.tokens if t != token))
 
 
-def fire_transition_from_0_to_1(
+async def lower_case(text: str) -> str:
+    await asyncio.sleep(0.01)  # Simulate waiting for data.
+    return text.lower()
+
+
+async def snake_case(text: str) -> str:
+    await asyncio.sleep(0.01)  # Simulate waiting for data.
+    return text.replace(" ", "_")
+
+
+async def fire_transition_from_0_to_1(
     input_places: dict[str, Place], output_places: dict[str, Place]
 ) -> tuple[dict[str, Place], dict[str, Place]]:
     token_to_move = select_token_by_id(input_places)
     if token_to_move is None:
         return input_places, output_places
     input_places_sans_token = {p.id: place_without_token(p, token_to_move) for _, p in input_places.items()}
-    transformed_token = Token(token_to_move.id, token_to_move.data.lower())
+    lower_case_data = await lower_case(token_to_move.data)
+    transformed_token = Token(token_to_move.id, lower_case_data)
     output_places_with_token = {
         p.id: Place(p.id, p.name, p.tokens + (transformed_token,)) for _, p in output_places.items()
     }
     return input_places_sans_token, output_places_with_token
 
 
-def fire_transition_from_1_to_2(
+async def fire_transition_from_1_to_2(
     input_places: Iterable[Place], output_places: Iterable[Place]
 ) -> tuple[dict[str, Place], dict[str, Place]]:
     token_to_move = select_token_by_id(input_places)
     if token_to_move is None:
         return input_places, output_places
     input_places_sans_token = {p.id: place_without_token(p, token_to_move) for _, p in input_places.items()}
-    transformed_token = Token(token_to_move.id, token_to_move.data.replace(" ", "_"))
+    snake_case_data = await snake_case(token_to_move.data)
+    transformed_token = Token(token_to_move.id, snake_case_data)
     output_places_with_token = {
         p.id: Place(p.id, p.name, p.tokens + (transformed_token,)) for _, p in output_places.items()
     }
@@ -115,9 +128,13 @@ petri_net = PetriNet(
 GraphNet.to_png(petri_net, "graph")
 
 
-transition_firing = True
-PrintPetriNet.places_and_tokens(petri_net)
-while transition_firing:
-    print('\n')
-    petri_net, transition_firing = SyncPetriNet.step(petri_net, transition_selection_function)
+async def main(petri_net):
+    transition_firing = True
     PrintPetriNet.places_and_tokens(petri_net)
+    while transition_firing:
+        print('\n')
+        petri_net, transition_firing = await AsyncPetriNet.step(petri_net, transition_selection_function)
+        PrintPetriNet.places_and_tokens(petri_net)
+
+
+asyncio.run(main(petri_net=petri_net))

@@ -5,7 +5,7 @@ from petri_net import PetriNet
 
 class GraphNet:
 
-    def to_png(petri_net: PetriNet, file_path: str, include_token_ids=True) -> None:
+    def to_png(petri_net: PetriNet, file_path: str, include_token_ids=True, format="png") -> None:
         delim = ": "
         nl = "\n"
         dot = Digraph()
@@ -21,4 +21,4 @@ class GraphNet:
             dot.edge(arc.place_id, arc.transition_id)
         for arc in petri_net.arcs_out:
             dot.edge(arc.transition_id, arc.place_id)
-        dot.render(file_path, format="png", cleanup=True)
+        dot.render(file_path, format=format, cleanup=True)
