@@ -11,7 +11,7 @@ Note, this is not intended to a be a general purpose Petri Net simulator.
 
 ## When not to use this
 If your data processing can be composed from pure function calls, you probably don't want to use this.
-1. There is considerable overhead in setting up the Petri Net.
+1. There is considerable overhead in setting up the Petri net.
 2. Operations on the Petri Net produce complex mutable state.
 The Petri Net formalism is powerful and should be used with care. Cycles, deadlocks and infinite loops are all possible and can be difficult to debug.
 
@@ -23,5 +23,25 @@ The formalism of Tokens, Places and Transitions may be helpful in creating inter
 Such interfaces can compartmentalise data transformation steps making it easier to reason about the overall process.
 
 
+# Example
+
+
+# Concepts
+
+## Uniquness
+
+Place and Transition nodes must be unique.
+
+Tokens don't need to be unique(???)
+
+## Transition Priority
+You can provide your own transition selection function or use one of the library functions.
+
+Each transition can in turn have a priority function associated with it. When using library functions the transition for which the priority is computed to be the highest will be selected to fire next.
+*** If a transition priority is computed to be zero, the transition does not fire ***
+
+
+## Arc Direction
+Arcs between Places and Transitions can be either input (ArcIn) or output arcs (ArcOut). This is used to help structure the Petri net. However, given that transitions can call arbitrary functions and affect both the input and output Places, information can flow in both directions. This is important to note because it means that infinite loops or futile cycles are possible.
 
 TODO: explain types and IDs and which IDs need to be unique.

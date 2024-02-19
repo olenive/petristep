@@ -1,10 +1,9 @@
-import asyncio
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Callable
 
 
-@dataclass
+@dataclass(frozen=True)
 class Token:
     id: str
     data: Optional[Any]
@@ -86,10 +85,26 @@ class PetriNetCheck:
             PetriNetCheck.place(place)
 
 
-class Pick:
+class SelectToken:
 
-    def out_token_with_highest_priority(places: dict[str, Place]) -> tuple[Token, dict[str, Place]]:
+    def total_count(places: dict[str, Place]) -> int:
+        return sum(len(place.tokens) for place in places.values())
+
+    def with_highest_priority(places: dict[str, Place]) -> tuple[Optional[Token]]:
+        tokens = tuple(token for place in places.values() for token in place.tokens)
+        if len(tokens) == 0:
+            return None, places
+        tokens_with_priority = ((token, token.priority_function(token.data)) for token in tokens)
+        sorted_by_priority = sorted(tokens_with_priority, key=lambda item: item[1], reverse=True)
+        return sorted_by_priority[0][0]
+
+
+class RemoveToken:
+
+    def with_highest_priority(places: dict[str, Place]) -> tuple[Optional[Token], dict[str, Place]]:
         tokens = (token for place in places.values() for token in place.tokens)
+        if len(tokens) == 0:
+            return None, places
         tokens_with_priority = ((token, token.priority_function(token.data)) for token in tokens)
         sorted_by_priority = sorted(tokens_with_priority, key=lambda item: item[1], reverse=True)
         token = sorted_by_priority[0][0]
@@ -98,6 +113,88 @@ class Pick:
             for place_id, place in places.items()
         }
         return token, places_sans_token
+
+
+class AddTokens:
+
+    def to_place(tokens: Iterable[Token], place: Place) -> Place:
+        return Place(place.id, place.name, place.tokens + tuple(tokens))
+
+
+class SelectTransition:
+
+    def using_priority_functions(net: PetriNet) -> Optional[Transition]:
+        priorities = PetriNetOperations.transition_priorities(net)
+        for transition_id, priority in priorities.items():
+            if priority > 0:
+                return net.transitions[transition_id]
+        return None
+
+
+class SyncFiringFunctions:
+
+    def move_and_transform_highest_priority_token(
+        input_places: dict[str, Place],
+        output_places: dict[str, Place],
+        transform_function: Callable[[Any], Any],
+        destination_place_ids: Optional[tuple[str, ...]] = None,
+    ) -> tuple[dict[str, Place], dict[str, Place]]:
+        token_to_move = SelectToken.with_highest_priority(input_places)
+        if token_to_move is None:
+            return input_places, output_places
+        input_places_sans_token = {
+            place_id: Place(place.id, place.name, tuple(t for t in place.tokens if t != token_to_move))
+            for place_id, place in input_places.items()
+        }
+        transformed_data = transform_function(token_to_move.data)
+        new_token = Token(token_to_move.id, transformed_data)
+        if destination_place_ids is not None:  # Add token only to the destination places.
+            if not isinstance(destination_place_ids, tuple):
+                raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
+            output_places_with_token = {
+                place_id: AddTokens.to_place((new_token,), place)
+                for place_id, place in output_places.items()
+                if place_id in destination_place_ids
+            }
+        else:  # Add token to all output places.
+            output_places_with_token = {
+                place_id: AddTokens.to_place((new_token,), place)
+                for place_id, place in output_places.items()
+            }
+        return input_places_sans_token, output_places_with_token
+
+
+class AsyncFiringFunctions:
+
+    async def move_and_transform_highest_priority_token(
+        input_places: dict[str, Place],
+        output_places: dict[str, Place],
+        asynchronous_transform_function: Callable[[Any], Any],
+        destination_place_ids: Optional[tuple[str, ...]] = None,
+    ) -> tuple[dict[str, Place], dict[str, Place]]:
+        token_to_move = SelectToken.with_highest_priority(input_places)
+        if token_to_move is None:
+            return input_places, output_places
+        input_places_sans_token = {
+            place_id: Place(place.id, place.name, tuple(t for t in place.tokens if t != token_to_move))
+            for place_id, place in input_places.items()
+        }
+        transformed_data = await asynchronous_transform_function(token_to_move.data)
+        new_token = Token(token_to_move.id, transformed_data)
+        if destination_place_ids is not None:  # Add token only to the destination places.
+            if not isinstance(destination_place_ids, tuple):
+                raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
+            output_places_with_token = {
+                place_id: AddTokens.to_place((new_token,), place)
+                for place_id, place in output_places.items()
+                if place_id in destination_place_ids
+            }
+        else:  # Add token to all output places.
+            output_places_with_token = {
+                place_id: AddTokens.to_place((new_token,), place)
+                for place_id, place in output_places.items()
+            }
+        return input_places_sans_token, output_places_with_token
 
 
 class PetriNetOperations:
@@ -136,13 +233,6 @@ class PetriNetOperations:
                 priorities[transition.id] = priority
         # Return an ordered dictionary sorted by priority values.
         return dict(sorted(priorities.items(), key=lambda item: item[1]))
-
-    def select_transition_using_priority_functions(net: PetriNet) -> Optional[Transition]:
-        priorities = PetriNetOperations.transition_priorities(net)
-        for transition_id, priority in priorities.items():
-            if priority > 0:
-                return net.transitions[transition_id]
-        return None
 
     def prepare_transition_firing(
         net: PetriNet,

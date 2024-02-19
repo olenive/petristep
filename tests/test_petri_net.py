@@ -1,5 +1,5 @@
 from petri_net import (
-    PetriNetOperations, Pick, Token, Place, Transition, ArcIn, ArcOut, PetriNet
+    PetriNetOperations, SelectToken, Token, Place, Transition, ArcIn, ArcOut, PetriNet
 )
 
 
@@ -48,41 +48,3 @@ class TestPetriNetOperations:
         assert transition.id == "t1"
         outgoing_places = PetriNetOperations.collect_outgoing_places(net, transition)
         assert outgoing_places == {"p2": net.places["p2"]}
-
-
-class TestPick:
-
-    def test_out_token_with_highest_priority(self):
-        t0 = Token(id="t0", data="data0", priority_function=lambda data: 1)
-        t1 = Token(id="t1", data="data1", priority_function=lambda data: 2)
-        t2 = Token(id="t2", data="data2", priority_function=lambda data: 3)
-        t3 = Token(id="t3", data="data3", priority_function=lambda data: 4)
-        t4 = Token(id="t4", data="data4", priority_function=lambda data: 5)
-        t5 = Token(id="t5", data="data5", priority_function=lambda data: 6)
-        places = {
-            "p0": Place(
-                id="p0",
-                name="Place 0",
-                tokens=(t0, t1, t2),
-            ),
-            "p1": Place(
-                id="p1",
-                name="Place 1",
-                tokens=(t3, t4, t5),
-            ),
-        }
-        expected_places_sans_token = {
-            "p0": Place(
-                id="p0",
-                name="Place 0",
-                tokens=(t0, t1, t2),
-            ),
-            "p1": Place(
-                id="p1",
-                name="Place 1",
-                tokens=(t3, t4),
-            ),
-        }
-        picked_token, places_sans_token = Pick.out_token_with_highest_priority(places)
-        assert picked_token == t5
-        assert places_sans_token == expected_places_sans_token
