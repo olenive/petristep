@@ -5,13 +5,16 @@ from petri_net import PetriNet
 
 class GraphNet:
 
-    def to_png(petri_net: PetriNet, file_path: str, include_token_ids=True, format="png") -> None:
+    def to_file(petri_net: PetriNet, file_path: str, include_token_ids=True, format="png") -> None:
         delim = ": "
         nl = "\n"
         dot = Digraph()
         for (place_id, place) in petri_net.places.items():
             if include_token_ids:
-                place_name_and_tokens = f"{place.name}\n{''.join([t.id + delim + t.data + nl  for t in place.tokens])}"
+                place_name_and_tokens = (
+                    f"{place.name}\n"
+                    f"{''.join([t.id + delim + str(t.data) + nl  for t in place.tokens])}"
+                )
                 dot.node(place.id, place_name_and_tokens)
             else:
                 dot.node(place.id, place.name)

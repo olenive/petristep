@@ -8,6 +8,7 @@ from typing import Any, Iterable, Optional, Callable
 class Token:
     id: str
     data: Optional[Any]
+    priority_function: Callable[[Any], int] = lambda _: 0
 
 
 @dataclass
@@ -24,6 +25,7 @@ class Transition:
     fire: Callable[[dict[str, Place], dict[str, Place]], tuple[dict[str, Place], dict[str, Place]]]
     maximum_firings: Optional[int] = 1
     firings_count: int = 0
+    priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ class PetriNet:
     arcs_out: set[ArcOut]
 
 
-class TransitionFireingLimitExceeded(Exception):
+class TransitionFiringLimitExceeded(Exception):
     pass
 
 
@@ -84,6 +86,20 @@ class PetriNetCheck:
             PetriNetCheck.place(place)
 
 
+class Pick:
+
+    def out_token_with_highest_priority(places: dict[str, Place]) -> tuple[Token, dict[str, Place]]:
+        tokens = (token for place in places.values() for token in place.tokens)
+        tokens_with_priority = ((token, token.priority_function(token.data)) for token in tokens)
+        sorted_by_priority = sorted(tokens_with_priority, key=lambda item: item[1], reverse=True)
+        token = sorted_by_priority[0][0]
+        places_sans_token = {
+            place_id: Place(place.id, place.name, tuple(t for t in place.tokens if t != token))
+            for place_id, place in places.items()
+        }
+        return token, places_sans_token
+
+
 class PetriNetOperations:
 
     def collect_incoming_places(net: PetriNet, transition: Transition, run_checks=True) -> dict[str, Place]:
@@ -108,6 +124,26 @@ class PetriNetOperations:
             PetriNetCheck.places(places.values())
         return places
 
+    def transition_priorities(petri_net: PetriNet) -> dict[str, int]:
+        """Use the transition_function associated with each transition to calculate its priority."""
+        priorities = {}
+        for transition in petri_net.transitions.values():
+            if transition.priority_function is not None:
+                priority = transition.priority_function(
+                    PetriNetOperations.collect_incoming_places(petri_net, transition),
+                    PetriNetOperations.collect_outgoing_places(petri_net, transition),
+                )
+                priorities[transition.id] = priority
+        # Return an ordered dictionary sorted by priority values.
+        return dict(sorted(priorities.items(), key=lambda item: item[1]))
+
+    def select_transition_using_priority_functions(net: PetriNet) -> Optional[Transition]:
+        priorities = PetriNetOperations.transition_priorities(net)
+        for transition_id, priority in priorities.items():
+            if priority > 0:
+                return net.transitions[transition_id]
+        return None
+
     def prepare_transition_firing(
         net: PetriNet,
         transition_selection_function: Callable[[PetriNet], Optional[Transition]],
@@ -119,7 +155,7 @@ class PetriNetOperations:
         incoming_places = PetriNetOperations.collect_incoming_places(net, transition, run_checks=run_checks)
         outgoing_places = PetriNetOperations.collect_outgoing_places(net, transition, run_checks=run_checks)
         if transition.maximum_firings is not None and transition.firings_count >= transition.maximum_firings:
-            raise TransitionFireingLimitExceeded(f"Transition {transition.id} has exceeded its maximum firings limit.")
+            raise TransitionFiringLimitExceeded(f"Transition {transition.id} has exceeded its maximum firings limit.")
         return transition, incoming_places, outgoing_places
 
     def updated_net(

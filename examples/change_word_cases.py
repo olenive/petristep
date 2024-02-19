@@ -112,7 +112,7 @@ petri_net = PetriNet(
 )
 
 
-GraphNet.to_png(petri_net, "graph")
+GraphNet.to_file(petri_net, "graph")
 
 
 transition_firing = True

@@ -125,7 +125,7 @@ petri_net = PetriNet(
 )
 
 
-GraphNet.to_png(petri_net, "graph")
+GraphNet.to_file(petri_net, "graph")
 
 
 async def main(petri_net):
