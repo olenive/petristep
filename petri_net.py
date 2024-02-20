@@ -1,6 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Iterable, Optional, Callable
+from typing import Any, Coroutine, Iterable, Optional, Callable, Union
 
 
 @dataclass(frozen=True)
@@ -17,11 +17,17 @@ class Place:
     tokens: Iterable[Token]
 
 
+FireFunctionType = Union[
+    Callable[[dict[str, Place], dict[str, Place]], tuple[dict[str, Place], dict[str, Place]]],
+    Callable[[dict[str, Place], dict[str, Place]], Coroutine[Any, Any, tuple[dict[str, Place], dict[str, Place]]]]
+]
+
+
 @dataclass
 class Transition:
     id: str
     name: Optional[str]
-    fire: Callable[[dict[str, Place], dict[str, Place]], tuple[dict[str, Place], dict[str, Place]]]
+    fire: FireFunctionType
     maximum_firings: Optional[int] = 1
     firings_count: int = 0
     priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None
@@ -62,6 +68,8 @@ class PlaceTypeError(Exception):
 class PetriNetCheck:
 
     def token(token: Token) -> None:
+        if not isinstance(token, Token):
+            raise TokenTypeError(f"Expected Token, got {type(token)}.")
         if not isinstance(token.id, str):
             raise TokenTypeError(f"Expected token id to be a str, got {type(token.id)}.")
         if not isinstance(token, Token):
@@ -90,7 +98,7 @@ class SelectToken:
     def total_count(places: dict[str, Place]) -> int:
         return sum(len(place.tokens) for place in places.values())
 
-    def with_highest_priority(places: dict[str, Place]) -> tuple[Optional[Token]]:
+    def with_highest_priority(places: dict[str, Place]) -> Optional[Token]:
         tokens = tuple(token for place in places.values() for token in place.tokens)
         if len(tokens) == 0:
             return None, places
@@ -102,12 +110,9 @@ class SelectToken:
 class RemoveToken:
 
     def with_highest_priority(places: dict[str, Place]) -> tuple[Optional[Token], dict[str, Place]]:
-        tokens = (token for place in places.values() for token in place.tokens)
-        if len(tokens) == 0:
+        token = SelectToken.with_highest_priority(places)
+        if token is None:
             return None, places
-        tokens_with_priority = ((token, token.priority_function(token.data)) for token in tokens)
-        sorted_by_priority = sorted(tokens_with_priority, key=lambda item: item[1], reverse=True)
-        token = sorted_by_priority[0][0]
         places_sans_token = {
             place_id: Place(place.id, place.name, tuple(t for t in place.tokens if t != token))
             for place_id, place in places.items()
@@ -117,8 +122,33 @@ class RemoveToken:
 
 class AddTokens:
 
-    def to_place(tokens: Iterable[Token], place: Place) -> Place:
-        return Place(place.id, place.name, place.tokens + tuple(tokens))
+    def to_place(tokens: Iterable[Token], place: Place, checks=True) -> Place:
+        if checks:
+            PetriNetCheck.tokens(tokens)
+        resulting_place = Place(place.id, place.name, place.tokens + tuple(tokens))
+        if checks:
+            PetriNetCheck.place(resulting_place)
+        return resulting_place
+
+    def to_output_places(
+        tokens: tuple[Token, ...],
+        destination_place_ids: Optional[tuple[str, ...]],
+        output_places: dict[str, Place],
+        checks=True,
+    ) -> dict[str, Place]:
+        if destination_place_ids is not None:  # Add token only to the specified destination places.
+            if not isinstance(destination_place_ids, tuple):
+                raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
+            return {
+                place_id: AddTokens.to_place(tokens, place, checks=checks)
+                for place_id, place in output_places.items()
+                if place_id in destination_place_ids
+            }
+        else:  # Add token to all output places.
+            return {
+                place_id: AddTokens.to_place(tokens, place, checks=checks)
+                for place_id, place in output_places.items()
+            }
 
 
 class SelectTransition:
@@ -139,29 +169,33 @@ class SyncFiringFunctions:
         transform_function: Callable[[Any], Any],
         destination_place_ids: Optional[tuple[str, ...]] = None,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
-        token_to_move = SelectToken.with_highest_priority(input_places)
+        token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        input_places_sans_token = {
-            place_id: Place(place.id, place.name, tuple(t for t in place.tokens if t != token_to_move))
-            for place_id, place in input_places.items()
-        }
         transformed_data = transform_function(token_to_move.data)
         new_token = Token(token_to_move.id, transformed_data)
-        if destination_place_ids is not None:  # Add token only to the destination places.
-            if not isinstance(destination_place_ids, tuple):
-                raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
-            output_places_with_token = {
-                place_id: AddTokens.to_place((new_token,), place)
-                for place_id, place in output_places.items()
-                if place_id in destination_place_ids
-            }
-        else:  # Add token to all output places.
-            output_places_with_token = {
-                place_id: AddTokens.to_place((new_token,), place)
-                for place_id, place in output_places.items()
-            }
+        output_places_with_token = AddTokens.to_output_places(
+            (new_token,), destination_place_ids, output_places
+        )
         return input_places_sans_token, output_places_with_token
+
+    def move_and_expand_highest_priority_token(
+        input_places: dict[str, Place],
+        output_places: dict[str, Place],
+        expand_function: Callable[[Any], tuple[Token, ...]],
+        destination_place_ids: Optional[tuple[str, ...]] = None,
+        checks=True,
+    ) -> tuple[dict[str, Place], dict[str, Place]]:
+        token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
+        if token_to_move is None:
+            return input_places, output_places
+        new_tokens = expand_function(token_to_move.data)
+        if checks:
+            PetriNetCheck.tokens(new_tokens)
+        output_places_with_tokens = AddTokens.to_output_places(
+            new_tokens, destination_place_ids, output_places
+        )
+        return input_places_sans_token, output_places_with_tokens
 
 
 class AsyncFiringFunctions:
@@ -172,29 +206,35 @@ class AsyncFiringFunctions:
         asynchronous_transform_function: Callable[[Any], Any],
         destination_place_ids: Optional[tuple[str, ...]] = None,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
-        token_to_move = SelectToken.with_highest_priority(input_places)
+        token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        input_places_sans_token = {
-            place_id: Place(place.id, place.name, tuple(t for t in place.tokens if t != token_to_move))
-            for place_id, place in input_places.items()
-        }
         transformed_data = await asynchronous_transform_function(token_to_move.data)
         new_token = Token(token_to_move.id, transformed_data)
-        if destination_place_ids is not None:  # Add token only to the destination places.
-            if not isinstance(destination_place_ids, tuple):
-                raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
-            output_places_with_token = {
-                place_id: AddTokens.to_place((new_token,), place)
-                for place_id, place in output_places.items()
-                if place_id in destination_place_ids
-            }
-        else:  # Add token to all output places.
-            output_places_with_token = {
-                place_id: AddTokens.to_place((new_token,), place)
-                for place_id, place in output_places.items()
-            }
+        output_places_with_token = AddTokens.to_output_places(
+            tokens=(new_token,),
+            destination_place_ids=destination_place_ids,
+            output_places=output_places,
+        )
         return input_places_sans_token, output_places_with_token
+
+    async def move_and_expand_highest_priority_token(
+        input_places: dict[str, Place],
+        output_places: dict[str, Place],
+        asynchronous_expand_function: Callable[[Any], Coroutine[Any, Any, tuple[Token, ...]]],
+        destination_place_ids: Optional[tuple[str, ...]] = None,
+        checks=True,
+    ) -> tuple[dict[str, Place], dict[str, Place]]:
+        token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
+        if token_to_move is None:
+            return input_places, output_places
+        new_tokens = await asynchronous_expand_function(token_to_move.data)
+        if checks:
+            PetriNetCheck.tokens(new_tokens)
+        output_places_with_tokens = AddTokens.to_output_places(
+            new_tokens, destination_place_ids, output_places
+        )
+        return input_places_sans_token, output_places_with_tokens
 
 
 class PetriNetOperations:

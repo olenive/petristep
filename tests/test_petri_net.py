@@ -1,5 +1,5 @@
 from petri_net import (
-    PetriNetOperations, SelectToken, Token, Place, Transition, ArcIn, ArcOut, PetriNet
+    AddTokens, PetriNetOperations, SelectToken, Token, Place, Transition, ArcIn, ArcOut, PetriNet
 )
 
 
@@ -48,3 +48,25 @@ class TestPetriNetOperations:
         assert transition.id == "t1"
         outgoing_places = PetriNetOperations.collect_outgoing_places(net, transition)
         assert outgoing_places == {"p2": net.places["p2"]}
+
+
+class TestAddTokens:
+
+    def test_to_output_places_with_one_to_many_token_split(self):
+        tokens = (
+            Token(id='0', data="ONE", priority_function=lambda input, output: 1),
+            Token(id='1', data="TWO", priority_function=lambda input, output: 2),
+            Token(id='2', data="ANOTHER TWO", priority_function=lambda input, output: 3),
+            Token(id='3', data="THREE IS THE MAGIC NUMBER", priority_function=lambda input, output: 4),
+        )
+        output_places = {'from_one_to_many': Place(id='from_one_to_many', name='From comma delimited', tokens=())}
+        expected_output_places = {
+            'from_one_to_many': Place(id='from_one_to_many', name='From comma delimited', tokens=tokens)
+        }
+        result_output_places = AddTokens.to_output_places(
+            tokens=tokens,
+            destination_place_ids=("from_one_to_many",),
+            output_places=output_places,
+            checks=True,
+        )
+        assert result_output_places == expected_output_places
