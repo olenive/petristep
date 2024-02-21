@@ -7,7 +7,7 @@ from typing import Any, Coroutine, Iterable, Optional, Callable, Union
 class Token:
     id: str
     data: Optional[Any]
-    priority_function: Callable[[Any], int] = lambda _: 0
+    priority: int = 1
 
 
 @dataclass
@@ -30,7 +30,8 @@ class Transition:
     fire: FireFunctionType
     maximum_firings: Optional[int] = 1
     firings_count: int = 0
-    priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None
+    priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = \
+        lambda input_places, _: len(tuple(token for place in input_places.values() for token in place.tokens))
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,7 @@ class SelectToken:
         tokens = tuple(token for place in places.values() for token in place.tokens)
         if len(tokens) == 0:
             return None, places
-        tokens_with_priority = ((token, token.priority_function(token.data)) for token in tokens)
+        tokens_with_priority = ((token, token.priority) for token in tokens)
         sorted_by_priority = sorted(tokens_with_priority, key=lambda item: item[1], reverse=True)
         return sorted_by_priority[0][0]
 
@@ -139,11 +140,13 @@ class AddTokens:
         if destination_place_ids is not None:  # Add token only to the specified destination places.
             if not isinstance(destination_place_ids, tuple):
                 raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
-            return {
-                place_id: AddTokens.to_place(tokens, place, checks=checks)
-                for place_id, place in output_places.items()
-                if place_id in destination_place_ids
-            }
+            out = {}
+            for place_id, place in output_places.items():
+                if place_id in destination_place_ids:
+                    out[place_id] = AddTokens.to_place(tokens, place, checks=checks)
+                else:
+                    out[place_id] = place
+            return out
         else:  # Add token to all output places.
             return {
                 place_id: AddTokens.to_place(tokens, place, checks=checks)
@@ -166,13 +169,14 @@ class SyncFiringFunctions:
     def move_and_transform_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        transform_function: Callable[[Any], Any],
+        transform_function: Callable[[Token], Token],
         destination_place_ids: Optional[tuple[str, ...]] = None,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
+        """Remove one token from the input places and make a corresponding token in the output places."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        transformed_data = transform_function(token_to_move.data)
+        transformed_data = transform_function(token_to_move)
         new_token = Token(token_to_move.id, transformed_data)
         output_places_with_token = AddTokens.to_output_places(
             (new_token,), destination_place_ids, output_places
@@ -186,6 +190,7 @@ class SyncFiringFunctions:
         destination_place_ids: Optional[tuple[str, ...]] = None,
         checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
+        """Remove one token and make many tokens from it."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
@@ -197,20 +202,36 @@ class SyncFiringFunctions:
         )
         return input_places_sans_token, output_places_with_tokens
 
+    def route_and_transform_highest_priority_token(
+        input_places: dict[str, Place],
+        output_places: dict[str, Place],
+        routing_function: Callable[[Token], str],
+        transform_function: Callable[[Token], Token],
+    ) -> tuple[dict[str, Place], dict[str, Place]]:
+        """Path a token to a destination place and transform the token."""
+        token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
+        if token_to_move is None:
+            return input_places, output_places
+        selected_place_id: str = routing_function(token_to_move)
+        new_token: Token = transform_function(token_to_move)
+        output_places_with_token = AddTokens.to_output_places(
+            (new_token,), (selected_place_id,), output_places
+        )
+        return input_places_sans_token, output_places_with_token
+
 
 class AsyncFiringFunctions:
 
     async def move_and_transform_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        asynchronous_transform_function: Callable[[Any], Any],
+        asynchronous_transform_function: Callable[[Token], Token],
         destination_place_ids: Optional[tuple[str, ...]] = None,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        transformed_data = await asynchronous_transform_function(token_to_move.data)
-        new_token = Token(token_to_move.id, transformed_data)
+        new_token = await asynchronous_transform_function(token_to_move)
         output_places_with_token = AddTokens.to_output_places(
             tokens=(new_token,),
             destination_place_ids=destination_place_ids,
@@ -278,7 +299,7 @@ class PetriNetOperations:
         net: PetriNet,
         transition_selection_function: Callable[[PetriNet], Optional[Transition]],
         run_checks=True,
-    ) -> tuple[dict[str, Place], dict[str, Place]]:
+    ) -> tuple[Transition, dict[str, Place], dict[str, Place]]:
         transition = transition_selection_function(net)
         if transition is None:  # No transition to fire so the petri net remains unchanged.
             return None, None, None

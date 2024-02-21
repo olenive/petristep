@@ -28,7 +28,7 @@ Such interfaces can compartmentalise data transformation steps making it easier 
 
 # Concepts
 
-## Uniquness
+## Uniqunes
 
 Place and Transition nodes must be unique.
 

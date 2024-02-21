@@ -15,11 +15,11 @@ class GraphNet:
                     f"{place.name}\n"
                     f"{''.join([t.id + delim + str(t.data) + nl  for t in place.tokens])}"
                 )
-                dot.node(place.id, place_name_and_tokens)
+                dot.node(place.id, place_name_and_tokens, shape="box", style="rounded")
             else:
                 dot.node(place.id, place.name)
         for (transition_id, transition) in petri_net.transitions.items():
-            dot.node(transition_id, transition.name, shape="rectangle")
+            dot.node(transition_id, transition.name, shape="box")
         for arc in petri_net.arcs_in:
             dot.edge(arc.place_id, arc.transition_id)
         for arc in petri_net.arcs_out:

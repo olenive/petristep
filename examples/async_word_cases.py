@@ -11,10 +11,10 @@ from helpers.graph_net import GraphNet
 
 
 initial_tokens = (
-    Token("1", "ONE", priority_function=lambda data: 1),
-    Token("2", "TWO", priority_function=lambda data: 2),
-    Token("2", "ANOTHER TWO", priority_function=lambda data: 3),
-    Token("3", "THREE IS THE MAGIC NUMBER", priority_function=lambda data: 4),
+    Token("1", "ONE", priority=1),
+    Token("2", "TWO", priority=2),
+    Token("2", "ANOTHER TWO", priority=3),
+    Token("3", "THREE IS THE MAGIC NUMBER", priority=4),
 )
 
 place_0 = Place(
@@ -34,14 +34,14 @@ place_2 = Place(
 )
 
 
-async def async_lower_case(text: str) -> str:
+async def async_lower_case(token: Token) -> Token:
     await asyncio.sleep(0.01)  # Simulate waiting for data.
-    return text.lower()
+    return Token(token.id, token.data.lower(), token.priority)
 
 
-async def async_snake_case(text: str) -> str:
+async def async_snake_case(token: Token) -> Token:
     await asyncio.sleep(0.01)  # Simulate waiting for data.
-    return text.replace(" ", "_")
+    return Token(token.id, token.data.replace(" ", "_"), token.priority)
 
 
 transition_from_0_to_1 = Transition(

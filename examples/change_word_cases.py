@@ -9,10 +9,10 @@ from helpers.graph_net import GraphNet
 
 
 initial_tokens = (
-    Token("1", "ONE", priority_function=lambda data: 1),
-    Token("2", "TWO", priority_function=lambda data: 2),
-    Token("2", "ANOTHER TWO", priority_function=lambda data: 3),
-    Token("3", "THREE IS THE MAGIC NUMBER", priority_function=lambda data: 4),
+    Token("1", "ONE", priority=1),
+    Token("2", "TWO", priority=2),
+    Token("2", "ANOTHER TWO", priority=3),
+    Token("3", "THREE IS THE MAGIC NUMBER", priority=4),
 )
 
 place_0 = Place(
@@ -35,7 +35,7 @@ transition_from_0_to_1 = Transition(
     id="lower_case",
     name="Lower Case",
     fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-        input_places, output_places, lambda data: data.lower(), destination_place_ids=("middle_place",)
+        input_places, output_places, lambda t: t.data.lower(), destination_place_ids=("middle_place",)
     ),
     maximum_firings=4,
     priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 100,
@@ -44,7 +44,7 @@ transition_from_1_to_2 = Transition(
     id="snake_case",
     name="Snake Case",
     fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-        input_places, output_places, lambda data: data.replace(" ", "_"), destination_place_ids=("final_place",)
+        input_places, output_places, lambda t: t.data.replace(" ", "_"), destination_place_ids=("final_place",)
     ),
     maximum_firings=4,
     priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,
