@@ -170,7 +170,6 @@ class SyncFiringFunctions:
         input_places: dict[str, Place],
         output_places: dict[str, Place],
         transform_function: Callable[[Token], Token],
-        destination_place_ids: Optional[tuple[str, ...]] = None,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         """Remove one token from the input places and make a corresponding token in the output places."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
@@ -179,7 +178,9 @@ class SyncFiringFunctions:
         transformed_data = transform_function(token_to_move)
         new_token = Token(token_to_move.id, transformed_data)
         output_places_with_token = AddTokens.to_output_places(
-            (new_token,), destination_place_ids, output_places
+            (new_token,),
+            None,  # Output to all destinations.
+            output_places
         )
         return input_places_sans_token, output_places_with_token
 
@@ -187,7 +188,6 @@ class SyncFiringFunctions:
         input_places: dict[str, Place],
         output_places: dict[str, Place],
         expand_function: Callable[[Any], tuple[Token, ...]],
-        destination_place_ids: Optional[tuple[str, ...]] = None,
         checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         """Remove one token and make many tokens from it."""
@@ -198,24 +198,33 @@ class SyncFiringFunctions:
         if checks:
             PetriNetCheck.tokens(new_tokens)
         output_places_with_tokens = AddTokens.to_output_places(
-            new_tokens, destination_place_ids, output_places
+            new_tokens,
+            None,  # Output to all destinations.
+            output_places,
         )
         return input_places_sans_token, output_places_with_tokens
 
     def route_and_transform_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        routing_function: Callable[[Token], str],
+        routing_function: Callable[[Token], tuple[str, ...]],
         transform_function: Callable[[Token], Token],
+        checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         """Path a token to a destination place and transform the token."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        selected_place_id: str = routing_function(token_to_move)
         new_token: Token = transform_function(token_to_move)
+        selected_place_ids: tuple[str, ...] = routing_function(new_token)
+        if checks:
+            if not isinstance(selected_place_ids, tuple):
+                raise ValueError(f"routing_function should return a tuple, not {type(selected_place_ids)}.")
+            for place_id in selected_place_ids:
+                if not isinstance(place_id, str):
+                    raise ValueError(f"routing_function should return a tuple of str, not {type(place_id)}.")
         output_places_with_token = AddTokens.to_output_places(
-            (new_token,), (selected_place_id,), output_places
+            (new_token,), selected_place_ids, output_places
         )
         return input_places_sans_token, output_places_with_token
 
@@ -226,7 +235,6 @@ class AsyncFiringFunctions:
         input_places: dict[str, Place],
         output_places: dict[str, Place],
         asynchronous_transform_function: Callable[[Token], Token],
-        destination_place_ids: Optional[tuple[str, ...]] = None,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
@@ -234,7 +242,7 @@ class AsyncFiringFunctions:
         new_token = await asynchronous_transform_function(token_to_move)
         output_places_with_token = AddTokens.to_output_places(
             tokens=(new_token,),
-            destination_place_ids=destination_place_ids,
+            destination_place_ids=None,  # Output to all destinations.
             output_places=output_places,
         )
         return input_places_sans_token, output_places_with_token
@@ -243,7 +251,6 @@ class AsyncFiringFunctions:
         input_places: dict[str, Place],
         output_places: dict[str, Place],
         asynchronous_expand_function: Callable[[Any], Coroutine[Any, Any, tuple[Token, ...]]],
-        destination_place_ids: Optional[tuple[str, ...]] = None,
         checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
@@ -253,9 +260,35 @@ class AsyncFiringFunctions:
         if checks:
             PetriNetCheck.tokens(new_tokens)
         output_places_with_tokens = AddTokens.to_output_places(
-            new_tokens, destination_place_ids, output_places
+            new_tokens,
+            None,  # Output to all destinations.
+            output_places,
         )
         return input_places_sans_token, output_places_with_tokens
+
+    async def route_and_transform_highest_priority_token(
+        input_places: dict[str, Place],
+        output_places: dict[str, Place],
+        routing_function: Callable[[Token], tuple[str, ...]],
+        transform_function: Callable[[Token], Token],
+        checks=True,
+    ) -> tuple[dict[str, Place], dict[str, Place]]:
+        """Path a token to a destination place and transform the token."""
+        token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
+        if token_to_move is None:
+            return input_places, output_places
+        new_token: Token = await transform_function(token_to_move)
+        selected_place_ids: tuple[str, ...] = await routing_function(new_token)
+        if checks:
+            if not isinstance(selected_place_ids, tuple):
+                raise ValueError(f"routing_function should return a tuple, not {type(selected_place_ids)}.")
+            for place_id in selected_place_ids:
+                if not isinstance(place_id, str):
+                    raise ValueError(f"routing_function should return a tuple of str, not {type(place_id)}.")
+        output_places_with_token = AddTokens.to_output_places(
+            (new_token,), selected_place_ids, output_places
+        )
+        return input_places_sans_token, output_places_with_token
 
 
 class PetriNetOperations:

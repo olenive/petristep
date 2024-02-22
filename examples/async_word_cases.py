@@ -48,7 +48,7 @@ transition_from_0_to_1 = Transition(
     id="lower_case",
     name="Lower Case",
     fire=lambda input_places, output_places: AsyncFiringFunctions.move_and_transform_highest_priority_token(
-        input_places, output_places, async_lower_case, destination_place_ids=("middle_place",)
+        input_places, output_places, async_lower_case,
     ),
     maximum_firings=4,
     priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 100,
@@ -57,7 +57,7 @@ transition_from_1_to_2 = Transition(
     id="snake_case",
     name="Snake Case",
     fire=lambda input_places, output_places: AsyncFiringFunctions.move_and_transform_highest_priority_token(
-        input_places, output_places, async_snake_case, destination_place_ids=("final_place",)
+        input_places, output_places, async_snake_case,
     ),
     maximum_firings=4,
     priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,

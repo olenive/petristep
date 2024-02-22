@@ -61,11 +61,11 @@ def tokens_from_comma_delimited(data: str) -> tuple[Token]:
 def routing_function(token: Token) -> tuple[str]:
     number_of_words = len(token.data.split(' '))
     if number_of_words <= 1:
-        return "class_a"
+        return "class_a",
     if number_of_words == 2:
-        return "class_b"
+        return "class_b",
     else:
-        return "class_c"
+        return "class_c",
 
 
 transitions = (
@@ -73,7 +73,7 @@ transitions = (
         id="split_string",
         name="Split string to tokens",
         fire=lambda input_places, output_places: SyncFiringFunctions.move_and_expand_highest_priority_token(
-            input_places, output_places, tokens_from_comma_delimited, destination_place_ids=("to_many_tokens",)
+            input_places, output_places, tokens_from_comma_delimited, #destination_place_ids=("to_many_tokens",)
         ),
         maximum_firings=1,
         priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,
@@ -94,7 +94,7 @@ transitions = (
         id="lower_case",
         name="Lower Case",
         fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-            input_places, output_places, lambda t: t.data.lower(), destination_place_ids=("middle_place",)
+            input_places, output_places, lambda t: t.data.lower(),
         ),
         maximum_firings=4,
         priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 100,
@@ -103,7 +103,7 @@ transitions = (
         id="snake_case",
         name="Snake Case",
         fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-            input_places, output_places, lambda t: t.data.replace(" ", "_"), destination_place_ids=("final_place",)
+            input_places, output_places, lambda t: t.data.replace(" ", "_"),
         ),
         maximum_firings=4,
         priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,

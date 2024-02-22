@@ -1,0 +1,6 @@
+Notes
+
+
+
+ - Change signature of routing_function passed to route_and_transform_highest_priority_token to return a tuple of strings rather than a single string to allow for multiple destination places.
+ - Remove destination_place_ids optional argument from move_and_transform_highest_priority_token and move_and_expand_highest_priority_token functions. It is redundant since output arcs can indicate where the token(s) should be put by the transition.
