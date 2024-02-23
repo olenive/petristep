@@ -9,6 +9,7 @@ from petri_net import (
 from helpers.print_net import PrintPetriNet
 from helpers.graph_net import GraphNet
 
+
 places = (
     Place(
         id="starting_place",
@@ -51,10 +52,10 @@ places = (
 places = {place.id: place for place in places}
 
 
-def tokens_from_comma_delimited(data: str) -> tuple[Token]:
+def tokens_from_comma_delimited(token: Token) -> tuple[Token]:
     return tuple(
         Token(id=str(i), data=word, priority=1)
-        for i, word in enumerate(data.split(", "))
+        for i, word in enumerate(token.data.split(", "))
     )
 
 
@@ -73,7 +74,7 @@ transitions = (
         id="split_string",
         name="Split string to tokens",
         fire=lambda input_places, output_places: SyncFiringFunctions.move_and_expand_highest_priority_token(
-            input_places, output_places, tokens_from_comma_delimited, #destination_place_ids=("to_many_tokens",)
+            input_places, output_places, tokens_from_comma_delimited,
         ),
         maximum_firings=1,
         priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,
@@ -134,7 +135,7 @@ starting_petri_net = PetriNet(
 )
 
 
-def main(plot_graphs: bool = False):
+def main(plot_graphs: bool = True):
     if plot_graphs:
         graphs_dir = Path("graphs")
         graphs_dir.mkdir(exist_ok=True, parents=True)

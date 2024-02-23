@@ -1,5 +1,5 @@
 from petri_net import (
-    AddTokens, PetriNetOperations, SelectToken, SyncFiringFunctions, Token, Place, Transition, ArcIn, ArcOut, PetriNet
+    AddTokens, PetriNetOperations, RemoveToken, SelectToken, SelectTransition, SyncFiringFunctions, Token, Place, Transition, ArcIn, ArcOut, PetriNet
 )
 
 
@@ -87,6 +87,98 @@ class TestAddTokens:
             (t0,), ("class_c",), output_places
         )
         assert result_output_places == expected_output_places
+
+
+class TestRemoveToken:
+
+    def test_with_highest_priority_given_empty_place(self):
+        input_places = {'current_email': Place(id='current_email', name='Email currently being processed', tokens=())}
+        expected = (None, input_places)
+        result = RemoveToken.with_highest_priority(input_places)
+        assert result == expected
+
+    def test_with_highest_priority_given_place_with_one_token(self):
+        token = Token(id="1", data="ONE", priority=1)
+        input_places = {'current_email': Place(id='current_email', name='Email currently being processed', tokens=(token,))}
+        expected = (token, {'current_email': Place(id='current_email', name='Email currently being processed', tokens=())})
+        result = RemoveToken.with_highest_priority(input_places)
+        assert result == expected
+
+
+class TestSelectTransition:
+
+    def test_using_priority_functions_with_priorities_above_zero(self):
+        transitions = (
+            Transition(
+                id="t0",
+                name="Transition 0",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: 1,
+            ),
+            Transition(
+                id="t1",
+                name="Transition 1",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: 2,
+            ),
+            Transition(
+                id="t2",
+                name="Transition 2",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: 100,
+            ),
+            Transition(
+                id="t3",
+                name="Transition 3",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: 4,
+            ),
+        )
+        dummy_net = PetriNet(
+            places=dict(),
+            transitions={t.id: t for t in transitions},
+            arcs_in=set(),
+            arcs_out=set()
+        )
+        expected = transitions[2]
+        result = SelectTransition.using_priority_functions(dummy_net)
+        assert result == expected
+
+    def test_using_priority_functions_returns_none_given_priorities_of_zero_or_less(self):
+        transitions = (
+            Transition(
+                id="t0",
+                name="Transition 0",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: 0,
+            ),
+            Transition(
+                id="t1",
+                name="Transition 1",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: -2,
+            ),
+            Transition(
+                id="t2",
+                name="Transition 2",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: -100,
+            ),
+            Transition(
+                id="t3",
+                name="Transition 3",
+                fire=lambda input_places, output_places: (input_places, output_places),
+                priority_function=lambda input_places, output_places: -4,
+            ),
+        )
+        dummy_net = PetriNet(
+            places=dict(),
+            transitions={t.id: t for t in transitions},
+            arcs_in=set(),
+            arcs_out=set()
+        )
+        result = SelectTransition.using_priority_functions(dummy_net)
+        assert result is None
 
 
 class TestSyncFiringFunctions:

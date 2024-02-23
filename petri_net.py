@@ -102,7 +102,7 @@ class SelectToken:
     def with_highest_priority(places: dict[str, Place]) -> Optional[Token]:
         tokens = tuple(token for place in places.values() for token in place.tokens)
         if len(tokens) == 0:
-            return None, places
+            return None
         tokens_with_priority = ((token, token.priority) for token in tokens)
         sorted_by_priority = sorted(tokens_with_priority, key=lambda item: item[1], reverse=True)
         return sorted_by_priority[0][0]
@@ -154,14 +154,31 @@ class AddTokens:
             }
 
 
+class TransitionPriorityFunction:
+
+    def _constant_if_any_input_tokens(input_places, _, value: int) -> int:
+        if SelectToken.total_count(input_places) > 0:
+            return value
+        return 0
+
+    def constant_if_any_input_tokens(value: int) -> Callable[[dict[str, Place], dict[str, Place]], int]:
+        return lambda input_places, _: TransitionPriorityFunction._constant_if_any_input_tokens(input_places, _, value)
+
+    def _equal_to_input_token_count(input_places, _) -> int:
+        return SelectToken.total_count(input_places)
+    
+    def equal_to_input_token_count() -> Callable[[dict[str, Place], dict[str, Place]], int]:
+        return lambda input_places, _: TransitionPriorityFunction._equal_to_input_token_count(input_places, _)
+
+
 class SelectTransition:
 
     def using_priority_functions(net: PetriNet) -> Optional[Transition]:
-        priorities = PetriNetOperations.transition_priorities(net)
-        for transition_id, priority in priorities.items():
-            if priority > 0:
-                return net.transitions[transition_id]
-        return None
+        transitions_and_priorities: dict[str, int] = PetriNetOperations.transition_priorities(net)
+        transition_id, priority = sorted(transitions_and_priorities.items(), key=lambda item: item[1])[-1]
+        if priority <= 0:
+            return None
+        return net.transitions[transition_id]
 
 
 class SyncFiringFunctions:
@@ -170,11 +187,14 @@ class SyncFiringFunctions:
         input_places: dict[str, Place],
         output_places: dict[str, Place],
         transform_function: Callable[[Token], Token],
+        checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         """Remove one token from the input places and make a corresponding token in the output places."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
+        if checks:
+            PetriNetCheck.token(token_to_move)
         transformed_data = transform_function(token_to_move)
         new_token = Token(token_to_move.id, transformed_data)
         output_places_with_token = AddTokens.to_output_places(
@@ -194,7 +214,9 @@ class SyncFiringFunctions:
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        new_tokens = expand_function(token_to_move.data)
+        if checks:
+            PetriNetCheck.token(token_to_move)
+        new_tokens = expand_function(token_to_move)
         if checks:
             PetriNetCheck.tokens(new_tokens)
         output_places_with_tokens = AddTokens.to_output_places(
@@ -207,14 +229,16 @@ class SyncFiringFunctions:
     def route_and_transform_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        routing_function: Callable[[Token], tuple[str, ...]],
         transform_function: Callable[[Token], Token],
+        routing_function: Callable[[Token], tuple[str, ...]],
         checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         """Path a token to a destination place and transform the token."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
+        if checks:
+            PetriNetCheck.token(token_to_move)
         new_token: Token = transform_function(token_to_move)
         selected_place_ids: tuple[str, ...] = routing_function(new_token)
         if checks:
@@ -234,12 +258,15 @@ class AsyncFiringFunctions:
     async def move_and_transform_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        asynchronous_transform_function: Callable[[Token], Token],
+        transform_function: Callable[[Token], Token],
+        checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        new_token = await asynchronous_transform_function(token_to_move)
+        if checks:
+            PetriNetCheck.token(token_to_move)
+        new_token = await transform_function(token_to_move)
         output_places_with_token = AddTokens.to_output_places(
             tokens=(new_token,),
             destination_place_ids=None,  # Output to all destinations.
@@ -250,13 +277,13 @@ class AsyncFiringFunctions:
     async def move_and_expand_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        asynchronous_expand_function: Callable[[Any], Coroutine[Any, Any, tuple[Token, ...]]],
+        expand_function: Callable[[Any], Coroutine[Any, Any, tuple[Token, ...]]],
         checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        new_tokens = await asynchronous_expand_function(token_to_move.data)
+        new_tokens = await expand_function(token_to_move)
         if checks:
             PetriNetCheck.tokens(new_tokens)
         output_places_with_tokens = AddTokens.to_output_places(
@@ -269,15 +296,17 @@ class AsyncFiringFunctions:
     async def route_and_transform_highest_priority_token(
         input_places: dict[str, Place],
         output_places: dict[str, Place],
-        routing_function: Callable[[Token], tuple[str, ...]],
         transform_function: Callable[[Token], Token],
+        routing_function: Callable[[Token], tuple[str, ...]],
         checks=True,
     ) -> tuple[dict[str, Place], dict[str, Place]]:
         """Path a token to a destination place and transform the token."""
         token_to_move, input_places_sans_token = RemoveToken.with_highest_priority(input_places)
         if token_to_move is None:
             return input_places, output_places
-        new_token: Token = await transform_function(token_to_move)
+        if checks:
+            PetriNetCheck.token(token_to_move)
+        new_token = await transform_function(token_to_move)
         selected_place_ids: tuple[str, ...] = await routing_function(new_token)
         if checks:
             if not isinstance(selected_place_ids, tuple):
@@ -368,6 +397,7 @@ class SyncPetriNet:
         petri_net: PetriNet,
         transition_selection_function: Callable[[PetriNet], Optional[Transition]],
         run_checks=True,
+        verbose=True,
     ) -> tuple[PetriNet, bool]:  # The boolean indicates whether a transition was fired.
         net = deepcopy(petri_net)
         transition, incoming_places, outgoing_places = PetriNetOperations.prepare_transition_firing(
@@ -376,6 +406,10 @@ class SyncPetriNet:
         if transition is None:  # No transition to fire so the petri net remains unchanged.
             return net, False
         new_incoming_places, new_outgoing_places = transition.fire(incoming_places, outgoing_places)
+        if new_incoming_places == incoming_places and new_outgoing_places == outgoing_places:
+            if verbose:
+                print(f"Transition {transition.id} did not change the petri net.")
+            return net, False
         net = PetriNetOperations.updated_net(net, transition, new_incoming_places, new_outgoing_places)
         return net, True
 
@@ -386,6 +420,7 @@ class AsyncPetriNet:
         petri_net: PetriNet,
         transition_selection_function: Callable[[PetriNet], Optional[Transition]],
         run_checks=True,
+        verbose=True,
     ) -> tuple[PetriNet, bool]:
         net = deepcopy(petri_net)
         transition, incoming_places, outgoing_places = PetriNetOperations.prepare_transition_firing(
@@ -394,5 +429,9 @@ class AsyncPetriNet:
         if transition is None:  # No transition to fire so the petri net remains unchanged.
             return net, False
         new_incoming_places, new_outgoing_places = await transition.fire(incoming_places, outgoing_places)
+        if new_incoming_places == incoming_places and new_outgoing_places == outgoing_places:
+            if verbose:
+                print(f"Transition {transition.id} did not change the petri net.")
+            return net, False
         net = PetriNetOperations.updated_net(net, transition, new_incoming_places, new_outgoing_places)
         return net, True

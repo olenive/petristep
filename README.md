@@ -45,3 +45,4 @@ Each transition can in turn have a priority function associated with it. When us
 Arcs between Places and Transitions can be either input (ArcIn) or output arcs (ArcOut). This is used to help structure the Petri net. However, given that transitions can call arbitrary functions and affect both the input and output Places, information can flow in both directions. This is important to note because it means that infinite loops or futile cycles are possible.
 
 TODO: explain types and IDs and which IDs need to be unique.
+TODO: Add example graph PNGs
