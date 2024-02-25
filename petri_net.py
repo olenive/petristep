@@ -8,6 +8,8 @@ class Token:
     id: str
     data: Optional[Any]
     priority: int = 1
+    summary_function: Optional[Callable[[Any], str]] = lambda data: data
+    # The summary_function can be used for data-specific formatting.
 
 
 @dataclass
@@ -166,7 +168,7 @@ class TransitionPriorityFunction:
 
     def _equal_to_input_token_count(input_places, _) -> int:
         return SelectToken.total_count(input_places)
-    
+
     def equal_to_input_token_count() -> Callable[[dict[str, Place], dict[str, Place]], int]:
         return lambda input_places, _: TransitionPriorityFunction._equal_to_input_token_count(input_places, _)
 
@@ -197,6 +199,10 @@ class SyncFiringFunctions:
             PetriNetCheck.token(token_to_move)
         transformed_data = transform_function(token_to_move)
         new_token = Token(token_to_move.id, transformed_data)
+        if new_token is None:
+            return input_places, output_places
+        if checks:
+            PetriNetCheck.token(new_token)
         output_places_with_token = AddTokens.to_output_places(
             (new_token,),
             None,  # Output to all destinations.
@@ -240,6 +246,10 @@ class SyncFiringFunctions:
         if checks:
             PetriNetCheck.token(token_to_move)
         new_token: Token = transform_function(token_to_move)
+        if new_token is None:
+            return input_places, output_places
+        if checks:
+            PetriNetCheck.token(new_token)
         selected_place_ids: tuple[str, ...] = routing_function(new_token)
         if checks:
             if not isinstance(selected_place_ids, tuple):
@@ -267,6 +277,10 @@ class AsyncFiringFunctions:
         if checks:
             PetriNetCheck.token(token_to_move)
         new_token = await transform_function(token_to_move)
+        if new_token is None:
+            return input_places_sans_token, output_places
+        if checks:
+            PetriNetCheck.token(new_token)
         output_places_with_token = AddTokens.to_output_places(
             tokens=(new_token,),
             destination_place_ids=None,  # Output to all destinations.
@@ -307,6 +321,10 @@ class AsyncFiringFunctions:
         if checks:
             PetriNetCheck.token(token_to_move)
         new_token = await transform_function(token_to_move)
+        if new_token is None:
+            return input_places, output_places
+        if checks:
+            PetriNetCheck.token(new_token)
         selected_place_ids: tuple[str, ...] = await routing_function(new_token)
         if checks:
             if not isinstance(selected_place_ids, tuple):
@@ -318,6 +336,131 @@ class AsyncFiringFunctions:
             (new_token,), selected_place_ids, output_places
         )
         return input_places_sans_token, output_places_with_token
+
+
+class TransitionMaking:
+
+    def priority_function_from_args(
+        priority: Optional[int],
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]],
+    ) -> Callable[[dict[str, Place], dict[str, Place]], int]:
+        if priority is not None and priority_function is not None:
+            raise ValueError("Only one of priority or priority_function can be provided.")
+        if priority is None and priority_function is None:
+            raise ValueError("Either priority or priority_function must be provided.")
+        if priority is not None:
+            return TransitionPriorityFunction.constant_if_any_input_tokens(priority)
+        return priority_function
+
+
+class SyncTransition:
+    """Wrappers to reduce the amount of syntax needed when declaring Transitions."""
+
+    def flip(
+        id: str,
+        transform_function: Callable[[Token], Token],
+        maximum_firings: Optional[int] = 1,
+        priority: Optional[int] = None,
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None,
+        name: Optional[str] = None,
+    ) -> Transition:
+        """Remove a token from an input place and add a token to the output place, transforming the data."""
+        return Transition(
+            id=id,
+            name=name if name is not None else id,
+            fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
+                input_places, output_places, transform_function=transform_function,
+            ),
+            maximum_firings=maximum_firings,
+            priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
+        )
+
+    def fork(
+        id: str,
+        transform_function: Callable[[Token], Token],
+        routing_function: Callable[[Token], tuple[str, ...]],
+        maximum_firings: Optional[int] = 1,
+        priority: Optional[int] = None,
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None,
+        name: Optional[str] = None,
+    ) -> Transition:
+        """Remove a token from the input places, transform data, and add tokens to output places.
+
+        The routing function is applied to the transformed token to determine which output places to add tokens to.
+        """
+        return Transition(
+            id=id,
+            name=name if name is not None else id,
+            fire=lambda input_places, output_places: SyncFiringFunctions.route_and_transform_highest_priority_token(
+                input_places, output_places, transform_function=transform_function, routing_function=routing_function,
+            ),
+            maximum_firings=maximum_firings,
+            priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
+        )
+
+
+class AsyncTransition:
+    """Wrappers to reduce the amount of syntax needed when declaring Transitions."""
+
+    def flip(
+        id: str,
+        async_transform_function: Callable[[Token], Token],
+        maximum_firings: Optional[int] = 1,
+        priority: Optional[int] = None,
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None,
+        name: Optional[str] = None,
+    ) -> Transition:
+        """Remove a token from an input place and add a token to the output place, transforming the data."""
+
+        async def async_fire(
+            input_places: dict[str, Place],
+            output_places: dict[str, Place]
+        ) -> tuple[dict[str, Place], dict[str, Place]]:
+            return await AsyncFiringFunctions.move_and_transform_highest_priority_token(
+                input_places, output_places, transform_function=async_transform_function,
+            )
+
+        return Transition(
+            id=id,
+            name=name if name is not None else id,
+            fire=async_fire,
+            maximum_firings=maximum_firings,
+            priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
+        )
+
+    def fork(
+        id: str,
+        async_transform_function: Callable[[Token], Token],
+        async_routing_function: Callable[[Token], tuple[str, ...]],
+        maximum_firings: Optional[int] = 1,
+        priority: Optional[int] = None,
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None,
+        name: Optional[str] = None,
+    ) -> Transition:
+        """Remove a token from the input places, transform data, and add tokens to output places.
+
+        The routing function is applied to the transformed token to determine which output places to add tokens to.
+        """
+
+        async def async_fire(
+            input_places: dict[str, Place],
+            output_places: dict[str, Place]
+        ) -> tuple[dict[str, Place], dict[str, Place]]:
+            return await AsyncFiringFunctions.route_and_transform_highest_priority_token(
+                input_places,
+                output_places,
+                transform_function=async_transform_function,
+                routing_function=async_routing_function,
+            )
+
+        return Transition(
+            id=id,
+            name=name if name is not None else id,
+            fire=async_fire,
+            maximum_firings=maximum_firings,
+            firings_count=0,
+            priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
+        )
 
 
 class PetriNetOperations:
@@ -426,6 +569,9 @@ class AsyncPetriNet:
         transition, incoming_places, outgoing_places = PetriNetOperations.prepare_transition_firing(
             net, transition_selection_function, run_checks=run_checks
         )
+        if verbose:
+            if transition is not None:
+                print(f"\nFiring Transition: {transition.name}")
         if transition is None:  # No transition to fire so the petri net remains unchanged.
             return net, False
         new_incoming_places, new_outgoing_places = await transition.fire(incoming_places, outgoing_places)
@@ -435,3 +581,18 @@ class AsyncPetriNet:
             return net, False
         net = PetriNetOperations.updated_net(net, transition, new_incoming_places, new_outgoing_places)
         return net, True
+
+
+class New:
+
+    def empty_place(id: str, name: Optional[str] = None) -> Place:
+        return Place(
+            id=id,
+            name=name if name is not None else id,
+            tokens=(),
+        )
+
+    def arc_out_and_empty_place(
+        transition_id: str, place_id: str, place_name: Optional[str] = None
+    ) -> tuple[ArcOut, Place]:
+        return (ArcOut(transition_id, place_id), New.empty_place(place_id))

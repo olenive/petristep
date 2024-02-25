@@ -1,3 +1,4 @@
+from typing import Any, Optional
 from graphviz import Digraph
 from warnings import warn
 
@@ -6,20 +7,46 @@ from petri_net import PetriNet, Token
 
 class GraphNet:
 
-    def format_data_dict(data: dict, max_characters_per_field: int) -> str:
-        return "\n".join(
-            f"{k}: {v[:max_characters_per_field]}{'...' if len(v) > max_characters_per_field else ''}"
-            for k, v in data.items()
-        )
-    
+    def format_data(data: Any, max_characters_per_field: int) -> str:
+
+        def truncate(s: str) -> str:
+            return s[:max_characters_per_field] + "..." if len(s) > max_characters_per_field else s
+
+        def format_data_field(data: Any) -> str:
+            if data is None:
+                return ""
+            elif isinstance(data, dict):
+                return "\n".join(
+                    f"{k}: {format_data_field(v)}"
+                    for k, v in data.items()
+                    if v is not None
+                )
+            elif isinstance(data, str):
+                return truncate(data)
+            else:
+                return truncate(str(data))
+
+        if data is None:
+            return ""
+        elif isinstance(data, dict):
+            return "\n".join(
+                f"{k}: {format_data_field(v)}"
+                for k, v in data.items()
+                if v is not None
+            )
+        elif isinstance(data, str):
+            return truncate(data)
+        else:
+            return truncate(str(data))
+
     def format_token_data(token: Token, max_characters_per_field: int) -> str:
         delim = ": "
         if token.data is None:
             formatted_data = ""
         elif isinstance(token.data, dict):
-            formatted_data = GraphNet.format_data_dict(token.data, max_characters_per_field)
+            formatted_data = GraphNet.format_data(token.data, max_characters_per_field)
         else:
-            formatted_data = str(token.data)
+            formatted_data = GraphNet.format_data(token.data, max_characters_per_field)
         return token.id + delim + formatted_data + "\n"
 
     def to_file(
