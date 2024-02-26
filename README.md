@@ -21,6 +21,7 @@ Petri Nets lend themselves to visualisation and can be used to help structure co
 If the outcomes of individual data processing steps are not easily predictable or not deterministic, the Petri Net structure can encode how different cases are handled and how the order of processing is determined.
 The formalism of Tokens, Places and Transitions may be helpful in creating interfaces between different stages of the process.
 Such interfaces can compartmentalise data transformation steps making it easier to reason about the overall process.
+I have found this to be useful for a process that requires a lot of calls to external resources with data taking possible paths depending on the response from those resources.
 
 
 # Example

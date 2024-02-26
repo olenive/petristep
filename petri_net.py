@@ -95,6 +95,11 @@ class PetriNetCheck:
         for place in places:
             PetriNetCheck.place(place)
 
+    def selected_places_exist(selected_place_ids: tuple[str, ...], places: dict[str, Place]) -> None:
+        for place_id in selected_place_ids:
+            if place_id not in places:
+                raise ValueError(f"Place \"{place_id}\" not found in places.")
+
 
 class SelectToken:
 
@@ -142,18 +147,23 @@ class AddTokens:
         if destination_place_ids is not None:  # Add token only to the specified destination places.
             if not isinstance(destination_place_ids, tuple):
                 raise ValueError(f"destination_place_ids should be a tuple, not {type(destination_place_ids)}.")
-            out = {}
+            out = dict()
             for place_id, place in output_places.items():
                 if place_id in destination_place_ids:
                     out[place_id] = AddTokens.to_place(tokens, place, checks=checks)
                 else:
                     out[place_id] = place
+            if len(out) == 0 and len(tokens) > 0 and len(destination_place_ids) > 0:
+                raise RuntimeError("Not expecting an empty output.")
             return out
         else:  # Add token to all output places.
-            return {
+            out = {
                 place_id: AddTokens.to_place(tokens, place, checks=checks)
                 for place_id, place in output_places.items()
             }
+            if len(out) == 0 and len(tokens) > 0 and len(destination_place_ids) > 0:
+                raise RuntimeError("Not expecting an empty output.")
+            return out
 
 
 class TransitionPriorityFunction:
@@ -251,6 +261,7 @@ class SyncFiringFunctions:
         if checks:
             PetriNetCheck.token(new_token)
         selected_place_ids: tuple[str, ...] = routing_function(new_token)
+        PetriNetCheck.selected_places_exist(selected_place_ids, output_places)
         if checks:
             if not isinstance(selected_place_ids, tuple):
                 raise ValueError(f"routing_function should return a tuple, not {type(selected_place_ids)}.")
@@ -281,11 +292,13 @@ class AsyncFiringFunctions:
             return input_places_sans_token, output_places
         if checks:
             PetriNetCheck.token(new_token)
-        output_places_with_token = AddTokens.to_output_places(
+        output_places_with_token: dict[str, Place] = AddTokens.to_output_places(
             tokens=(new_token,),
             destination_place_ids=None,  # Output to all destinations.
             output_places=output_places,
         )
+        if len(output_places_with_token) == 0:
+            import pdb; pdb.set_trace()
         return input_places_sans_token, output_places_with_token
 
     async def move_and_expand_highest_priority_token(
@@ -326,6 +339,7 @@ class AsyncFiringFunctions:
         if checks:
             PetriNetCheck.token(new_token)
         selected_place_ids: tuple[str, ...] = await routing_function(new_token)
+        PetriNetCheck.selected_places_exist(selected_place_ids, output_places)
         if checks:
             if not isinstance(selected_place_ids, tuple):
                 raise ValueError(f"routing_function should return a tuple, not {type(selected_place_ids)}.")
@@ -397,6 +411,25 @@ class SyncTransition:
             maximum_firings=maximum_firings,
             priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
         )
+    
+    def expand(
+        id: str,
+        expand_function: Callable[[Token], tuple[Token, ...]],
+        maximum_firings: Optional[int] = 1,
+        priority: Optional[int] = None,
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None,
+        name: Optional[str] = None,
+    ) -> Transition:
+        """Remove a token from the input places and add multiple tokens to the output places."""
+        return Transition(
+            id=id,
+            name=name if name is not None else id,
+            fire=lambda input_places, output_places: SyncFiringFunctions.move_and_expand_highest_priority_token(
+                input_places, output_places, expand_function=expand_function,
+            ),
+            maximum_firings=maximum_firings,
+            priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
+        )
 
 
 class AsyncTransition:
@@ -462,6 +495,33 @@ class AsyncTransition:
             priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
         )
 
+    def expand(
+        id: str,
+        async_expand_function: Callable[[Token], Coroutine[Any, Any, tuple[Token, ...]]],
+        maximum_firings: Optional[int] = 1,
+        priority: Optional[int] = None,
+        priority_function: Optional[Callable[[dict[str, Place], dict[str, Place]], int]] = None,
+        name: Optional[str] = None,
+    ) -> Transition:
+        """Remove a token from the input places and add multiple tokens to the output places."""
+
+        async def async_fire(
+            input_places: dict[str, Place],
+            output_places: dict[str, Place]
+        ) -> tuple[dict[str, Place], dict[str, Place]]:
+            return await AsyncFiringFunctions.move_and_expand_highest_priority_token(
+                input_places, output_places, expand_function=async_expand_function,
+            )
+
+        return Transition(
+            id=id,
+            name=name if name is not None else id,
+            fire=async_fire,
+            maximum_firings=maximum_firings,
+            firings_count=0,
+            priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
+        )
+
 
 class PetriNetOperations:
 
@@ -479,6 +539,9 @@ class PetriNetOperations:
     def collect_outgoing_places(net: PetriNet, transition: Transition, run_checks=True) -> dict[str, Place]:
         arcs_from_transition = (arc for arc in net.arcs_out if arc.transition_id == transition.id)
         arc_place_ids = tuple(arc.place_id for arc in arcs_from_transition)
+        # Check that the places exist.
+        if run_checks:
+            PetriNetCheck.selected_places_exist(arc_place_ids, net.places)
         places = {
             place_id: place for place_id, place in net.places.items()
             if place.id in arc_place_ids  # place_id and place.id should be the same.
@@ -512,6 +575,8 @@ class PetriNetOperations:
         outgoing_places = PetriNetOperations.collect_outgoing_places(net, transition, run_checks=run_checks)
         if transition.maximum_firings is not None and transition.firings_count >= transition.maximum_firings:
             raise TransitionFiringLimitExceeded(f"Transition {transition.id} has exceeded its maximum firings limit.")
+        if len(outgoing_places) == 0:
+            import pdb; pdb.set_trace()
         return transition, incoming_places, outgoing_places
 
     def updated_net(
@@ -596,3 +661,22 @@ class New:
         transition_id: str, place_id: str, place_name: Optional[str] = None
     ) -> tuple[ArcOut, Place]:
         return (ArcOut(transition_id, place_id), New.empty_place(place_id))
+
+    def petri_net(
+        parts: Iterable[Union[Place, Transition, ArcIn, ArcOut]],
+        existing_net: Optional[PetriNet] = None,
+    ) -> PetriNet:
+        if existing_net is None:
+            return PetriNet(
+                {part.id: part for part in parts if isinstance(part, Place)},
+                {part.id: part for part in parts if isinstance(part, Transition)},
+                {part for part in parts if isinstance(part, ArcIn)},
+                {part for part in parts if isinstance(part, ArcOut)},
+            )
+        else:
+            return PetriNet(
+                {**existing_net.places, **{part.id: part for part in parts if isinstance(part, Place)}},
+                {**existing_net.transitions, **{part.id: part for part in parts if isinstance(part, Transition)}},
+                existing_net.arcs_in.union({part for part in parts if isinstance(part, ArcIn)}),
+                existing_net.arcs_out.union({part for part in parts if isinstance(part, ArcOut)}),
+            )

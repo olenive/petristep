@@ -135,7 +135,7 @@ starting_petri_net = PetriNet(
 )
 
 
-def main(plot_graphs: bool = True):
+def main(plot_graphs: bool = False):
     if plot_graphs:
         graphs_dir = Path("graphs")
         graphs_dir.mkdir(exist_ok=True, parents=True)
