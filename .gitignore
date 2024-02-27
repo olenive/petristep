@@ -8,7 +8,11 @@ TRASH
 .vscode
 
 # Plots
+!graphs_for_docs/branching_caes_before.png
+!graphs_for_docs/branching_caes_after.png
 graphs/
 *.png
 *.svg
+
+notes.txt
 

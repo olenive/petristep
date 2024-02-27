@@ -35,7 +35,7 @@ transition_from_0_to_1 = Transition(
     id="lower_case",
     name="Lower Case",
     fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-        input_places, output_places, lambda t: t.data.lower(),
+        input_places, output_places, lambda t: Token(t.id, t.data.lower()),
     ),
     maximum_firings=4,
     priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 100,
@@ -44,7 +44,7 @@ transition_from_1_to_2 = Transition(
     id="snake_case",
     name="Snake Case",
     fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-        input_places, output_places, lambda t: t.data.replace(" ", "_"),
+        input_places, output_places, lambda t: Token(t.id, t.data.replace(" ", "_")),
     ),
     maximum_firings=4,
     priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,
@@ -64,8 +64,9 @@ starting_petri_net = PetriNet(
 )
 
 
-def main():
-    GraphNet.to_file(starting_petri_net, "graph_before", format="png")
+def main(save_graphs_to_files: bool = False):
+    if save_graphs_to_files:
+        GraphNet.to_file(starting_petri_net, "graph_before", format="png")
 
     transition_firing = True
     petri_net = starting_petri_net
@@ -76,7 +77,8 @@ def main():
         )
         PrintPetriNet.places_and_tokens(petri_net)
 
-    GraphNet.to_file(petri_net, "graph_after", format="png")
+    if save_graphs_to_files:
+        GraphNet.to_file(petri_net, "graph_after", format="png")
 
 
 if __name__ == "__main__":

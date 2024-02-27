@@ -98,7 +98,7 @@ class PetriNetCheck:
     def selected_places_exist(selected_place_ids: tuple[str, ...], places: dict[str, Place]) -> None:
         for place_id in selected_place_ids:
             if place_id not in places:
-                raise ValueError(f"Place \"{place_id}\" not found in places.")
+                raise ValueError(f"Place \"{place_id}\" not found in selected places.")
 
 
 class SelectToken:
@@ -207,8 +207,10 @@ class SyncFiringFunctions:
             return input_places, output_places
         if checks:
             PetriNetCheck.token(token_to_move)
-        transformed_data = transform_function(token_to_move)
-        new_token = Token(token_to_move.id, transformed_data)
+        new_token = transform_function(token_to_move)
+        if checks:
+            PetriNetCheck.token(new_token)
+        # new_token = Token(token_to_move.id, transformed_data)
         if new_token is None:
             return input_places, output_places
         if checks:
@@ -288,6 +290,8 @@ class AsyncFiringFunctions:
         if checks:
             PetriNetCheck.token(token_to_move)
         new_token = await transform_function(token_to_move)
+        if checks:
+            PetriNetCheck.token(new_token)
         if new_token is None:
             return input_places_sans_token, output_places
         if checks:
@@ -297,8 +301,6 @@ class AsyncFiringFunctions:
             destination_place_ids=None,  # Output to all destinations.
             output_places=output_places,
         )
-        if len(output_places_with_token) == 0:
-            import pdb; pdb.set_trace()
         return input_places_sans_token, output_places_with_token
 
     async def move_and_expand_highest_priority_token(
@@ -411,7 +413,7 @@ class SyncTransition:
             maximum_firings=maximum_firings,
             priority_function=TransitionMaking.priority_function_from_args(priority, priority_function),
         )
-    
+
     def expand(
         id: str,
         expand_function: Callable[[Token], tuple[Token, ...]],
@@ -574,9 +576,9 @@ class PetriNetOperations:
         incoming_places = PetriNetOperations.collect_incoming_places(net, transition, run_checks=run_checks)
         outgoing_places = PetriNetOperations.collect_outgoing_places(net, transition, run_checks=run_checks)
         if transition.maximum_firings is not None and transition.firings_count >= transition.maximum_firings:
-            raise TransitionFiringLimitExceeded(f"Transition {transition.id} has exceeded its maximum firings limit.")
-        if len(outgoing_places) == 0:
-            import pdb; pdb.set_trace()
+            raise TransitionFiringLimitExceeded(
+                f"Transition {transition.id} has exceeded its maximum firings limit."
+            )
         return transition, incoming_places, outgoing_places
 
     def updated_net(
@@ -663,20 +665,34 @@ class New:
         return (ArcOut(transition_id, place_id), New.empty_place(place_id))
 
     def petri_net(
-        parts: Iterable[Union[Place, Transition, ArcIn, ArcOut]],
+        nodes_and_edges: Iterable[Union[Place, Transition, ArcIn, ArcOut]],
         existing_net: Optional[PetriNet] = None,
     ) -> PetriNet:
         if existing_net is None:
-            return PetriNet(
-                {part.id: part for part in parts if isinstance(part, Place)},
-                {part.id: part for part in parts if isinstance(part, Transition)},
-                {part for part in parts if isinstance(part, ArcIn)},
-                {part for part in parts if isinstance(part, ArcOut)},
-            )
+            places = {part.id: part for part in nodes_and_edges if isinstance(part, Place)}
+            transitions = {part.id: part for part in nodes_and_edges if isinstance(part, Transition)}
+            arcs_in = {part for part in nodes_and_edges if isinstance(part, ArcIn)}
+            arcs_out = {part for part in nodes_and_edges if isinstance(part, ArcOut)}
         else:
-            return PetriNet(
-                {**existing_net.places, **{part.id: part for part in parts if isinstance(part, Place)}},
-                {**existing_net.transitions, **{part.id: part for part in parts if isinstance(part, Transition)}},
-                existing_net.arcs_in.union({part for part in parts if isinstance(part, ArcIn)}),
-                existing_net.arcs_out.union({part for part in parts if isinstance(part, ArcOut)}),
-            )
+            places = {**existing_net.places, **{part.id: part for part in nodes_and_edges if isinstance(part, Place)}}
+            transitions = {**existing_net.transitions, **{part.id: part for part in nodes_and_edges if isinstance(part, Transition)}}
+            arcs_in = existing_net.arcs_in.union({part for part in nodes_and_edges if isinstance(part, ArcIn)})
+            arcs_out = existing_net.arcs_out.union({part for part in nodes_and_edges if isinstance(part, ArcOut)})
+        # Check places.
+        for place in places.values():
+            PetriNetCheck.place(place)
+            PetriNetCheck.tokens(place.tokens)
+
+        # Check arcs.
+        for arc_in in arcs_in:
+            if arc_in.place_id not in places:
+                raise ValueError(f"ArcIn place_id {arc_in.place_id} not found in places.")
+            if arc_in.transition_id not in transitions:
+                raise ValueError(f"ArcIn transition_id {arc_in.transition_id} not found in transitions.")
+        for arc_out in arcs_out:
+            if arc_out.place_id not in places:
+                raise ValueError(f"ArcOut place_id {arc_out.place_id} not found in places.")
+            if arc_out.transition_id not in transitions:
+                raise ValueError(f"ArcOut transition_id {arc_out.transition_id} not found in transitions.")
+
+        return PetriNet(places, transitions, arcs_in, arcs_out)

@@ -11,7 +11,8 @@ class TestExamples:
 
     @pytest.mark.parametrize("example_file_sans_extension", [
         "change_word_cases",
-        "split_and_change_cases",
+        "branching_cases_long_declarations",
+        "branching_cases_wrapped_declarations",
     ])
     def test_run_synchronous_examples(self, example_file_sans_extension, capsys):
         # Add the project directory to sys.path to allow importing modules

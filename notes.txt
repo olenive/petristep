@@ -1,8 +1,0 @@
-Notes
-
-
-Tidy
-
- - Fix bug in SelectToken.with_highest_priority when no tokens are available.
- - Change move_and_expand_highest_priority_token functions so that the expand_function takes in a Token rather than just token data.
- - Limit number of characters in each token data field on graph plots to 100 by default.

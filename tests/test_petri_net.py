@@ -1,5 +1,6 @@
 from petri_net import (
-    AddTokens, PetriNetOperations, RemoveToken, SelectToken, SelectTransition, SyncFiringFunctions, Token, Place, Transition, ArcIn, ArcOut, PetriNet
+    AddTokens, PetriNetOperations, RemoveToken, SelectTransition, SyncFiringFunctions, Token, Place,
+    Transition, ArcIn, ArcOut, PetriNet
 )
 
 
@@ -59,7 +60,9 @@ class TestAddTokens:
             Token(id='2', data="ANOTHER TWO", priority=3),
             Token(id='3', data="THREE IS THE MAGIC NUMBER", priority=4),
         )
-        output_places = {'from_one_to_many': Place(id='from_one_to_many', name='From comma delimited', tokens=())}
+        output_places = {
+            'from_one_to_many': Place(id='from_one_to_many', name='From comma delimited', tokens=())
+        }
         expected_output_places = {
             'from_one_to_many': Place(id='from_one_to_many', name='From comma delimited', tokens=tokens)
         }
@@ -99,8 +102,13 @@ class TestRemoveToken:
 
     def test_with_highest_priority_given_place_with_one_token(self):
         token = Token(id="1", data="ONE", priority=1)
-        input_places = {'current_email': Place(id='current_email', name='Email currently being processed', tokens=(token,))}
-        expected = (token, {'current_email': Place(id='current_email', name='Email currently being processed', tokens=())})
+        input_places = {
+            'current_email': Place(id='current_email', name='Email currently being processed', tokens=(token,))
+        }
+        expected = (
+            token,
+            {'current_email': Place(id='current_email', name='Email currently being processed', tokens=())}
+        )
         result = RemoveToken.with_highest_priority(input_places)
         assert result == expected
 

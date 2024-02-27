@@ -95,7 +95,7 @@ transitions = (
         id="lower_case",
         name="Lower Case",
         fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-            input_places, output_places, lambda t: t.data.lower(),
+            input_places, output_places, lambda t: Token(t.id, t.data.lower()),
         ),
         maximum_firings=4,
         priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 100,
@@ -104,7 +104,7 @@ transitions = (
         id="snake_case",
         name="Snake Case",
         fire=lambda input_places, output_places: SyncFiringFunctions.move_and_transform_highest_priority_token(
-            input_places, output_places, lambda t: t.data.replace(" ", "_"),
+            input_places, output_places, lambda t: Token(t.id, t.data.replace(" ", "_")),
         ),
         maximum_firings=4,
         priority_function=lambda input_places, _: SelectToken.total_count(input_places) * 1,
@@ -135,8 +135,8 @@ starting_petri_net = PetriNet(
 )
 
 
-def main(plot_graphs: bool = False):
-    if plot_graphs:
+def main(save_graphs_to_files: bool = False):
+    if save_graphs_to_files:
         graphs_dir = Path("graphs")
         graphs_dir.mkdir(exist_ok=True, parents=True)
         GraphNet.to_file(starting_petri_net, graphs_dir/"000_before", format="svg")
@@ -151,10 +151,10 @@ def main(plot_graphs: bool = False):
             petri_net, SelectTransition.using_priority_functions,
         )
         PrintPetriNet.places_and_tokens(petri_net)
-        if plot_graphs:
+        if save_graphs_to_files:
             GraphNet.to_file(petri_net, graphs_dir/f"{step_count:03}_step", format="svg")
 
-    if plot_graphs:
+    if save_graphs_to_files:
         GraphNet.to_file(petri_net, graphs_dir/"after", format="svg")
 
 

@@ -77,8 +77,9 @@ starting_petri_net = PetriNet(
 )
 
 
-async def main():
-    GraphNet.to_file(starting_petri_net, "graph_before", format="png")
+async def main(save_graphs_to_files: bool = False):
+    if save_graphs_to_files:
+        GraphNet.to_file(starting_petri_net, "graph_before", format="png")
 
     transition_firing = True
     petri_net = starting_petri_net
@@ -89,7 +90,8 @@ async def main():
         )
         PrintPetriNet.places_and_tokens(petri_net)
 
-    GraphNet.to_file(petri_net, "graph_after", format="png")
+    if save_graphs_to_files:
+        GraphNet.to_file(petri_net, "graph_after", format="png")
 
 
 if __name__ == "__main__":
