@@ -15,7 +15,7 @@ The goal is to help structure data processing pipelines and make them extensible
 ### When Not to Use This
 If your data processing can be easily composed from pure function calls, you probably don't want to use this. Some things to consider:
 1. For simple tasks, the extra code needed to set up the Petri net may be a source of unnecessary complexity.
-2. Operations on the Petri net produce mutable states which can be hard to keep track of. Does order of processing matter?
+2. Each time a transition fires, the Petri net is changed in place. This mutable state can be hard to keep track of. Does order of processing matter for your use case?
 3. The Petri Net formalism is powerful and should be used with care. Cycles, deadlocks and infinite loops are all possible and can be difficult to debug.
 
 ### When to Use This

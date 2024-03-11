@@ -85,7 +85,7 @@ async def main(save_graphs_to_files: bool = False):
     petri_net = starting_petri_net
     while transition_firing:
         print('\n')
-        petri_net, transition_firing = await AsyncPetriNet.step(
+        transition_firing = await AsyncPetriNet.step(
             petri_net, SelectTransition.using_priority_functions,
         )
         PrintPetriNet.places_and_tokens(petri_net)

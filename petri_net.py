@@ -581,24 +581,22 @@ class PetriNetOperations:
             )
         return transition, incoming_places, outgoing_places
 
-    def updated_net(
+    def update_net(
         petri_net: PetriNet,
         transition: Transition,
         new_incoming_places: dict[str, Place],
         new_outgoing_places: dict[str, Place],
-    ) -> PetriNet:
-        net = deepcopy(petri_net)
+    ) -> None:
         new_transition = deepcopy(transition)
         new_transition.firings_count += 1
-        net.transitions[transition.id] = new_transition
+        petri_net.transitions[transition.id] = new_transition
         # Update incoming places
         for place_id, place in new_incoming_places.items():
-            net.places[place_id] = place
+            petri_net.places[place_id] = place
         # Update outgoing places.
         # NOTE: This could overwrite the incoming places if the same place is in both incoming and outgoing places.
         for place_id, place in new_outgoing_places.items():
-            net.places[place_id] = place
-        return net
+            petri_net.places[place_id] = place
 
 
 class SyncPetriNet:
@@ -608,20 +606,19 @@ class SyncPetriNet:
         transition_selection_function: Callable[[PetriNet], Optional[Transition]],
         run_checks=True,
         verbose=True,
-    ) -> tuple[PetriNet, bool]:  # The boolean indicates whether a transition was fired.
-        net = deepcopy(petri_net)
+    ) -> bool:  # The boolean indicates whether a transition was fired.
         transition, incoming_places, outgoing_places = PetriNetOperations.prepare_transition_firing(
-            net, transition_selection_function, run_checks=run_checks
+            petri_net, transition_selection_function, run_checks=run_checks
         )
         if transition is None:  # No transition to fire so the petri net remains unchanged.
-            return net, False
+            return False
         new_incoming_places, new_outgoing_places = transition.fire(incoming_places, outgoing_places)
         if new_incoming_places == incoming_places and new_outgoing_places == outgoing_places:
             if verbose:
                 print(f"Transition {transition.id} did not change the petri net.")
-            return net, False
-        net = PetriNetOperations.updated_net(net, transition, new_incoming_places, new_outgoing_places)
-        return net, True
+            return False
+        PetriNetOperations.update_net(petri_net, transition, new_incoming_places, new_outgoing_places)
+        return True
 
 
 class AsyncPetriNet:
@@ -631,23 +628,22 @@ class AsyncPetriNet:
         transition_selection_function: Callable[[PetriNet], Optional[Transition]],
         run_checks=True,
         verbose=True,
-    ) -> tuple[PetriNet, bool]:
-        net = deepcopy(petri_net)
+    ) -> bool:
         transition, incoming_places, outgoing_places = PetriNetOperations.prepare_transition_firing(
-            net, transition_selection_function, run_checks=run_checks
+            petri_net, transition_selection_function, run_checks=run_checks
         )
         if verbose:
             if transition is not None:
                 print(f"\nFiring Transition: {transition.name}")
         if transition is None:  # No transition to fire so the petri net remains unchanged.
-            return net, False
+            return False
         new_incoming_places, new_outgoing_places = await transition.fire(incoming_places, outgoing_places)
         if new_incoming_places == incoming_places and new_outgoing_places == outgoing_places:
             if verbose:
                 print(f"Transition {transition.id} did not change the petri net.")
-            return net, False
-        net = PetriNetOperations.updated_net(net, transition, new_incoming_places, new_outgoing_places)
-        return net, True
+            return False
+        PetriNetOperations.update_net(petri_net, transition, new_incoming_places, new_outgoing_places)
+        return True
 
 
 class New:
@@ -674,10 +670,13 @@ class New:
             arcs_in = {part for part in nodes_and_edges if isinstance(part, ArcIn)}
             arcs_out = {part for part in nodes_and_edges if isinstance(part, ArcOut)}
         else:
-            places = {**existing_net.places, **{part.id: part for part in nodes_and_edges if isinstance(part, Place)}}
-            transitions = {**existing_net.transitions, **{part.id: part for part in nodes_and_edges if isinstance(part, Transition)}}
-            arcs_in = existing_net.arcs_in.union({part for part in nodes_and_edges if isinstance(part, ArcIn)})
-            arcs_out = existing_net.arcs_out.union({part for part in nodes_and_edges if isinstance(part, ArcOut)})
+            cp = deepcopy(existing_net)
+            places = {**cp.places, **{part.id: part for part in nodes_and_edges if isinstance(part, Place)}}
+            transitions = {
+                **cp.transitions, **{part.id: part for part in nodes_and_edges if isinstance(part, Transition)}
+            }
+            arcs_in = cp.arcs_in.union({part for part in nodes_and_edges if isinstance(part, ArcIn)})
+            arcs_out = cp.arcs_out.union({part for part in nodes_and_edges if isinstance(part, ArcOut)})
         # Check places.
         for place in places.values():
             PetriNetCheck.place(place)
@@ -686,13 +685,13 @@ class New:
         # Check arcs.
         for arc_in in arcs_in:
             if arc_in.place_id not in places:
-                raise ValueError(f"ArcIn place_id {arc_in.place_id} not found in places.")
+                raise ValueError(f"ArcIn place_id \"{arc_in.place_id}\" not found in places.")
             if arc_in.transition_id not in transitions:
-                raise ValueError(f"ArcIn transition_id {arc_in.transition_id} not found in transitions.")
+                raise ValueError(f"ArcIn transition_id \"{arc_in.transition_id}\" not found in transitions.")
         for arc_out in arcs_out:
             if arc_out.place_id not in places:
-                raise ValueError(f"ArcOut place_id {arc_out.place_id} not found in places.")
+                raise ValueError(f"ArcOut place_id \"{arc_out.place_id}\" not found in places.")
             if arc_out.transition_id not in transitions:
-                raise ValueError(f"ArcOut transition_id {arc_out.transition_id} not found in transitions.")
+                raise ValueError(f"ArcOut transition_id \"{arc_out.transition_id}\" not found in transitions.")
 
         return PetriNet(places, transitions, arcs_in, arcs_out)

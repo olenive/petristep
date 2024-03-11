@@ -147,7 +147,7 @@ def main(save_graphs_to_files: bool = False):
     while transition_firing:
         step_count += 1
         print('\n')
-        petri_net, transition_firing = SyncPetriNet.step(
+        transition_firing = SyncPetriNet.step(
             petri_net, SelectTransition.using_priority_functions,
         )
         PrintPetriNet.places_and_tokens(petri_net)
